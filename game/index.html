@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emberline — a three.js tactical FPS</title>
+<style>
+  /* Emberline's look: dusk over a foundry yard. Warm browns and furnace
+     orange, one teal for the player's squad, type set in system faces. */
+  :root {
+    --canvas: #17110c;
+    --surface: #241a12;
+    --surface2: #2e2115;
+    --hairline: #4a3826;
+    --ink: #f2e8da;
+    --muted: #b3a189;
+    --ember: #ff7a26;
+    --teal: #2ec4b6;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-readout: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--canvas); color: var(--ink); font-family: var(--font-ui); }
+  #game, #game canvas { position: fixed; inset: 0; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; transition: opacity 300ms ease; }
+
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); }
+  #crosshair i { position: absolute; background: var(--ink); opacity: .9; }
+  #crosshair i:nth-child(1) { left: 10px; top: 0; width: 2px; height: 7px; }
+  #crosshair i:nth-child(2) { left: 10px; bottom: 0; width: 2px; height: 7px; }
+  #crosshair i:nth-child(3) { top: 10px; left: 0; height: 2px; width: 7px; }
+  #crosshair i:nth-child(4) { top: 10px; right: 0; height: 2px; width: 7px; }
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; }
+  #hitmarker i { position: absolute; background: var(--ember); }
+  #hitmarker i:nth-child(1) { left: 12px; top: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(2) { left: 12px; bottom: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(3) { top: 12px; left: 0; height: 2px; width: 8px; }
+  #hitmarker i:nth-child(4) { top: 12px; right: 0; height: 2px; width: 8px; }
+
+  #dmg-flash { position: fixed; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(200, 40, 10, .55) 100%); opacity: 0; pointer-events: none; }
+
+  #topbar { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); text-align: center; }
+  #timer { font-family: var(--font-readout); font-size: 30px; letter-spacing: .04em; }
+  #score-line { font-family: var(--font-readout); font-size: 13px; color: var(--muted); margin-top: 2px; }
+  #score-line b { color: var(--ink); }
+  #alive-line { font-family: var(--font-readout); font-size: 12px; color: var(--muted); }
+  #charge-tag { margin-top: 4px; font-size: 13px; font-weight: 600; letter-spacing: .06em; color: var(--teal); }
+  #event-line { font-size: 13px; color: var(--ember); min-height: 16px; }
+
+  #feed { position: fixed; top: 14px; right: 18px; text-align: right; font-size: 13px; color: var(--muted); display: grid; gap: 3px; }
+  #feed div { background: rgba(23, 17, 12, .55); padding: 2px 8px; border-radius: 3px; }
+
+  #bottom-left { position: fixed; left: 26px; bottom: 22px; width: 240px; }
+  #health-num { font-family: var(--font-readout); font-size: 40px; line-height: 1; }
+  #armor-tag { font-size: 11px; letter-spacing: .14em; color: var(--teal); margin-left: 8px; }
+  #health-track { height: 7px; background: rgba(255,255,255,.14); margin-top: 6px; border-radius: 3px; overflow: hidden; }
+  #health-fill { height: 100%; width: 100%; background: var(--teal); transition: width 120ms linear; }
+  #money { font-family: var(--font-readout); font-size: 17px; color: #ffd28a; margin-top: 8px; }
+
+  #bottom-right { position: fixed; right: 26px; bottom: 22px; text-align: right; }
+  #weapon-name { font-size: 13px; color: var(--muted); letter-spacing: .05em; }
+  #ammo { font-family: var(--font-readout); font-size: 44px; line-height: 1.05; }
+  #ammo-reserve { font-size: 17px; color: var(--muted); }
+
+  #banner { position: fixed; top: 26%; left: 0; right: 0; text-align: center; opacity: 0; transition: opacity 250ms ease; }
+  #banner-title { font-size: 40px; font-weight: 700; letter-spacing: .05em; text-shadow: 0 2px 18px rgba(0,0,0,.7); }
+  #banner-sub { font-size: 16px; color: var(--muted); margin-top: 4px; }
+
+  #channel { position: fixed; left: 50%; bottom: 24%; transform: translateX(-50%); width: 280px; opacity: 0; transition: opacity 150ms ease; text-align: center; }
+  #channel-label { font-size: 13px; letter-spacing: .18em; margin-bottom: 6px; }
+  #channel-track { height: 8px; background: rgba(255,255,255,.15); border-radius: 4px; overflow: hidden; }
+  #channel-fill { height: 100%; width: 0%; background: var(--ember); }
+
+  #prompt { position: fixed; left: 50%; bottom: 31%; transform: translateX(-50%); font-size: 15px; color: var(--ink); text-shadow: 0 1px 8px rgba(0,0,0,.8); }
+  #spectate { position: fixed; left: 50%; bottom: 12%; transform: translateX(-50%); font-size: 15px; color: var(--muted); }
+
+  #buy-menu { position: fixed; left: 26px; top: 50%; transform: translateY(-50%); width: 300px; background: rgba(36, 26, 18, .92); border: 1px solid var(--hairline); border-radius: 6px; padding: 14px; pointer-events: auto; display: none; }
+  #buy-menu h2 { margin: 0 0 4px; font-size: 15px; letter-spacing: .12em; }
+  #buy-money { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+  #buy-items { display: grid; gap: 6px; }
+  .buy-item { font: inherit; font-size: 13.5px; text-align: left; padding: 8px 10px; background: var(--surface2); color: var(--ink); border: 1px solid var(--hairline); border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+  .buy-item:hover:not(:disabled) { border-color: var(--ember); }
+  .buy-item:disabled { opacity: .45; cursor: default; }
+  .buy-key { font-family: var(--font-readout); font-size: 11px; border: 1px solid var(--hairline); border-radius: 3px; padding: 1px 5px; color: var(--muted); }
+  .buy-price { margin-left: auto; font-family: var(--font-readout); font-size: 12.5px; color: #ffd28a; }
+
+  .overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--canvas) 78%, transparent); }
+  .overlay[hidden] { display: none; }
+  .panel { width: min(480px, 100%); padding: 34px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 6px; }
+  .panel h1 { margin: 0 0 6px; font-size: 40px; letter-spacing: .02em; font-weight: 700; }
+  .panel h1 span { color: var(--ember); }
+  .panel p { margin: 0 0 20px; font-size: 15.5px; line-height: 1.55; color: var(--muted); }
+  #play { font: inherit; font-weight: 600; font-size: 16px; padding: 12px 22px; border: 1px solid var(--ember); border-radius: 6px; background: var(--ember); color: #1c1108; cursor: pointer; }
+  #play:hover { background: var(--ink); border-color: var(--ink); }
+  .keys { margin: 22px 0 0; padding: 0; list-style: none; display: grid; gap: 7px; font-size: 13.5px; color: var(--muted); }
+  .keys li { display: flex; align-items: center; gap: 7px; }
+  .keys kbd { min-width: 23px; padding: 2px 6px; border: 1px solid var(--hairline); border-radius: 3px; font-family: var(--font-readout); font-size: 11.5px; color: var(--ink); text-align: center; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud" style="opacity:0">
+  <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+  <div id="topbar">
+    <div id="timer">1:40</div>
+    <div id="score-line">EMBER <b>0</b> — <b>0</b> ASH · ROUND 1</div>
+    <div id="alive-line">4v4</div>
+    <div id="charge-tag"></div>
+    <div id="event-line"></div>
+  </div>
+  <div id="feed"></div>
+  <div id="bottom-left">
+    <div><span id="health-num">100</span><span id="armor-tag"></span></div>
+    <div id="health-track"><div id="health-fill"></div></div>
+    <div id="money">$800</div>
+  </div>
+  <div id="bottom-right">
+    <div id="weapon-name">P9 Sidearm</div>
+    <div id="ammo"><span id="ammo-mag">12</span> <span id="ammo-reserve">/ 60</span></div>
+  </div>
+  <div id="banner"><div id="banner-title"></div><div id="banner-sub"></div></div>
+  <div id="channel"><div id="channel-label">PLANTING…</div><div id="channel-track"><div id="channel-fill"></div></div></div>
+  <div id="prompt"></div>
+  <div id="spectate"></div>
+  <div id="buy-menu">
+    <h2>BUY — EMBER SUPPLY</h2>
+    <div id="buy-money"></div>
+    <div id="buy-items"></div>
+  </div>
+</div>
+<div id="dmg-flash"></div>
+
+<div id="overlay" class="overlay">
+  <section class="panel" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
+    <h1 id="overlay-title">EMBER<span>LINE</span></h1>
+    <p id="overlay-copy">A round-based tactical shooter in a dusk foundry yard. Your Ember squad attacks:
+      plant the charge at the Furnace or the Depot, or wipe the Ash defenders. Win rounds, earn money,
+      buy better guns. First to 7 rounds takes the match.</p>
+    <button id="play" type="button">Click to play</button>
+    <ul class="keys">
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move · <kbd>Mouse</kbd> Look · <kbd>Click</kbd> Fire</li>
+      <li><kbd>R</kbd> Reload · <kbd>Ctrl</kbd> Crouch · <kbd>G</kbd> Throw frag</li>
+      <li><kbd>E</kbd> Hold to plant the charge</li>
+      <li><kbd>1</kbd>–<kbd>6</kbd> Buy in the buy window · <kbd>1</kbd>/<kbd>2</kbd> Swap guns in the round</li>
+    </ul>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
